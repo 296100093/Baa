@@ -1,159 +1,184 @@
 #include "DeviceState.h"
+#include "DeviceStateInternal.h"
+#include "DeviceDataMgr.h"
 #include "DeviceDirect.h"
+#include <assert.h>
 
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
 
-BbDevStateBlend* BbDevStateBlend::Create( D3D11_BLEND_DESC* desc )
+BB_DEV_SMART_REF_IMPL(BbDevStateBlend,GetStateBlendItl);
+
+void BbDevStateBlend::Create(D3D11_BLEND_DESC* desc)
 {
-	return s_BbDdMgr->CreateStateBlend( desc );
+	assert( BBUL_MAX==m_Idx );
+	m_Idx = BbDeviceDataMgr::Get()->CreateStateBlend(desc);
 }
 
-BbDevStateBlend::BbDevStateBlend( ID3D11BlendState* state )
-	:	m_BlendState(state)
-	,	m_SampleMask(0xFFFFFFFF)
-	,	m_Dirty(false)
+void BbDevStateBlend::SetBlendFactor(float f0, float f1, float f2, float f3)
 {
-	m_Type = BB_DEV_DAT_STATE_BLEND;
-	m_BlendFactor[0]=m_BlendFactor[1]=m_BlendFactor[2]=m_BlendFactor[3]=0.0f;
+	BbDeviceDataMgr::Get()->GetStateBlendItl(m_Idx)->SetBlendFactor( f0, f1, f2, f3 );
 }
 
-void BbDevStateBlend::SetBlendFactor( float f0, float f1, float f2, float f3 )
+void BbDevStateBlend::SetSampleMask(BBUL mask)
 {
-	m_BlendFactor[0]=f0;
-	m_BlendFactor[1]=f1;
-	m_BlendFactor[2]=f2;
-	m_BlendFactor[3]=f3;
-	m_Dirty = true;
+	BbDeviceDataMgr::Get()->GetStateBlendItl(m_Idx)->SetSampleMask(mask);
 }
 
-void BbDevStateBlend::SetSampleMask( UINT mask )
+void BbDevStateBlend::Active()
 {
-	m_SampleMask = mask;
-	m_Dirty = true;
-}
-
-float* BbDevStateBlend::BlendFactor()
-{
-	return m_BlendFactor;
-}
-
-UINT BbDevStateBlend::SampleMask()
-{
-	return m_SampleMask;
-}
-
-ID3D11BlendState* BbDevStateBlend::State()
-{
-	m_Dirty = false;
-	return m_BlendState;
+	BbDeviceDataMgr* mgr = BbDeviceDataMgr::Get();
+	mgr->BbdDirect()->ActiveStateBlend( mgr->GetStateBlendItl( m_Idx ) );
 }
 
 //////////////////////////////////////////////////////////////////////////
 
-BbDevStateDepthStencil* BbDevStateDepthStencil::Create( D3D11_DEPTH_STENCIL_DESC* desc )
+BB_DEV_SMART_REF_IMPL(BbDevStateDepthStencil,GetStateDepthStencilItl);
+
+void BbDevStateDepthStencil::Create(D3D11_DEPTH_STENCIL_DESC* desc)
 {
-	return s_BbDdMgr->CreateStateDepthStencil( desc );
+	assert( BBUL_MAX==m_Idx );
+	m_Idx = BbDeviceDataMgr::Get()->CreateStateDepthStencil(desc);
 }
 
-BbDevStateDepthStencil::BbDevStateDepthStencil( ID3D11DepthStencilState* state )
-	:	m_StencilRef(1)
-	,	m_DepthStencilState(state)
+void BbDevStateDepthStencil::SetStencilRef(BBUL ref)
 {
-	m_Type = BB_DEV_DAT_STATE_DEPTH_STENCIL;
+	BbDeviceDataMgr::Get()->GetStateDepthStencilItl(m_Idx)->SetStencilRef(ref);
 }
 
-void BbDevStateDepthStencil::SetStencilRef( UINT ref )
+void BbDevStateDepthStencil::Active()
 {
-	m_StencilRef = ref;
-}
-
-UINT BbDevStateDepthStencil::StencilRef()
-{
-	return m_StencilRef;
-}
-
-ID3D11DepthStencilState* BbDevStateDepthStencil::State()
-{
-	return m_DepthStencilState;
+	BbDeviceDataMgr* mgr = BbDeviceDataMgr::Get();
+	mgr->BbdDirect()->ActiveStateDepthStencil( mgr->GetStateDepthStencilItl( m_Idx ) );
 }
 
 //////////////////////////////////////////////////////////////////////////
 
-BbDevStateRasterizer* BbDevStateRasterizer::Create( D3D11_RASTERIZER_DESC* desc )
+BB_DEV_SMART_REF_IMPL(BbDevStateRasterizer,GetStateRasterizerItl);
+
+void BbDevStateRasterizer::Create(D3D11_RASTERIZER_DESC* desc)
 {
-	return s_BbDdMgr->CreateStateRasterizer( desc );
+	assert( BBUL_MAX==m_Idx );
+	m_Idx = BbDeviceDataMgr::Get()->CreateStateRasterizer(desc);
 }
 
-BbDevStateRasterizer::BbDevStateRasterizer( ID3D11RasterizerState* state )
-	:	m_RasterizerState(state)
+void BbDevStateRasterizer::Active()
 {
-	m_Type = BB_DEV_DAT_STATE_RASTERIZER;
-}
-
-ID3D11RasterizerState* BbDevStateRasterizer::State()
-{
-	return m_RasterizerState;
+	BbDeviceDataMgr* mgr = BbDeviceDataMgr::Get();
+	mgr->BbdDirect()->ActiveStateRasterizer( mgr->GetStateRasterizerItl( m_Idx ) );
 }
 
 //////////////////////////////////////////////////////////////////////////
 
-BbDevStateSampler* BbDevStateSampler::Create( D3D11_SAMPLER_DESC* desc )
+BB_DEV_SMART_REF_IMPL(BbDevStateSampler,GetStateSamplerItl);
+
+void BbDevStateSampler::Create(D3D11_SAMPLER_DESC* desc)
 {
-	return s_BbDdMgr->CreateStateSampler( desc );
+	assert( BBUL_MAX==m_Idx );
+	m_Idx = BbDeviceDataMgr::Get()->CreateStateSampler(desc);
 }
 
-BbDevStateSampler::BbDevStateSampler( ID3D11SamplerState* state )
-	:	m_SamplerState(state)
-	,	m_AttachSlot(0)
+//////////////////////////////////////////////////////////////////////////
+
+void BbDevLayoutDesc::Add(const char* name, BbLayoutFmtTypeE fmt)
 {
-	m_Slot[BB_PIPE_TYPE_VS] =
-	m_Slot[BB_PIPE_TYPE_HS] =
-	m_Slot[BB_PIPE_TYPE_GS] =
-	m_Slot[BB_PIPE_TYPE_DS] =
-	m_Slot[BB_PIPE_TYPE_PS] = BBUC_MAX;
-	m_Type = BB_DEV_DAT_STATE_SAMPLER;
+	m_StrBuf.push_back(name);
+	D3D11_INPUT_ELEMENT_DESC ied;
+	ied.SemanticName = m_StrBuf.back().c_str();
+	ied.SemanticIndex = 0;
+	ied.Format = TurnFmt(fmt);
+	ied.InputSlot = 0;
+	ied.AlignedByteOffset = CalcOffset();
+	ied.InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA;
+	ied.InstanceDataStepRate = 0;
+	m_Desc.push_back(ied);
 }
 
-void BbDevStateSampler::RefSlotAdd( BBUC pipe, BBUC slot )
+D3D11_INPUT_ELEMENT_DESC* BbDevLayoutDesc::Buf()
 {
-	if ( m_Slot[pipe]!=slot )
+	return &m_Desc.front();
+}
+
+BBUL BbDevLayoutDesc::Count()
+{
+	return static_cast<BBUL>(m_Desc.size());
+}
+
+DXGI_FORMAT BbDevLayoutDesc::TurnFmt(BbLayoutFmtTypeE fmt)
+{
+	DXGI_FORMAT df = DXGI_FORMAT_UNKNOWN;
+	switch (fmt)
 	{
-		if ( BBUC_MAX!=m_Slot[pipe] )
-		{
-			s_BbDdMgr->Device()->DeActiveSrv(pipe, m_Slot[pipe]);
-		}		
+	case BB_LF_XYZW_F:	df = DXGI_FORMAT_R32G32B32A32_FLOAT;	break;
+	case BB_LF_XYZ_F:	df = DXGI_FORMAT_R32G32B32_FLOAT;		break;
+	case BB_LF_XY_F:	df = DXGI_FORMAT_R32G32_FLOAT;			break;
+	case BB_LF_X_F:		df = DXGI_FORMAT_R32_FLOAT;				break;
+	default:	break;
 	}
-	m_Slot[pipe] = slot;
-	++m_AttachSlot;
-	RefAdd();
+	return df;
 }
 
-void BbDevStateSampler::RefSlotSub( BBUC pipe, BBUC slot )
+UINT BbDevLayoutDesc::TurnSize(DXGI_FORMAT fmt)
 {
-	if ( slot==m_Slot[pipe] )
+	UINT size = 0;
+	switch (fmt)
 	{
-		m_Slot[pipe] = BBUC_MAX;
-		--m_AttachSlot;
-		Release();
+	case DXGI_FORMAT_R32G32B32A32_FLOAT:	size = 16;	break;
+	case DXGI_FORMAT_R32G32B32_FLOAT:		size = 12;	break;
+	case DXGI_FORMAT_R32G32_FLOAT:			size = 8;		break;
+	case DXGI_FORMAT_R32_FLOAT:				size = 4;		break;
+	default:	break;
 	}
+	return size;
 }
 
-void BbDevStateSampler::RefSlotClear()
+UINT BbDevLayoutDesc::CalcOffset()
 {
-	if ( 0<m_AttachSlot )
+	UINT offset = 0;
+	if (0 < m_Desc.size())
 	{
-		for ( BBUC i(0); i < BB_PIPE_TYPE_COUNT; ++i )
-		{
-			if ( BBUC_MAX!=m_Slot[i] )
-			{
-				s_BbDdMgr->Device()->DeActiveSrv(pipe, m_Slot[pipe]);
-			}
-		}
+		D3D11_INPUT_ELEMENT_DESC* ied = &m_Desc.back();
+		offset = ied->AlignedByteOffset + TurnSize(ied->Format);
 	}
+	return offset;
 }
 
-ID3D11SamplerState* BbDevStateSampler::State()
+//////////////////////////////////////////////////////////////////////////
+
+BbDevViewPort::BbDevViewPort()
 {
-	return m_SamplerState;
+	memset( &m_ViewPort, 0, sizeof(D3D11_VIEWPORT) );
+}
+
+void BbDevViewPort::Init( BBUL width, BBUL height )
+{
+	m_ViewPort.Width = static_cast< float >( width );
+	m_ViewPort.Height = static_cast< float >( height );
+	m_ViewPort.MaxDepth = 1;
+	m_ViewPort.MinDepth = 0;
+	m_ViewPort.TopLeftX = 0;
+	m_ViewPort.TopLeftY = 0;
+}
+
+void BbDevViewPort::Active()
+{
+
+}
+
+//////////////////////////////////////////////////////////////////////////
+
+BbDevToplogy::BbDevToplogy()
+	: m_Topo( D3D_PRIMITIVE_TOPOLOGY_UNDEFINED )
+{
+
+}
+
+void BbDevToplogy::Init( D3D11_PRIMITIVE_TOPOLOGY topo )
+{
+	m_Topo = topo;
+}
+
+void BbDevToplogy::Active()
+{
+
 }

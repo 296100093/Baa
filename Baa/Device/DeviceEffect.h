@@ -1,27 +1,102 @@
 #pragma once
 
-#include "DeviceDef.h"
-#include "DeviceInputAssembler.h"
-#include "DevicePipe.h"
+#include "DeviceState.h"
+#include "DeviceTexture.h"
+#include "DeviceBuffer.h"
+
+class BbDevSrvItl;
+class BbDeviceEffect;
+
+//////////////////////////////////////////////////////////////////////////
+
+class BbDeviceEffectTech
+{
+public:
+	BbDeviceEffectTech();
+	BbDeviceEffectTech( BbDeviceEffect* eft, BBUC idx );
+	void Begin();
+	void End();
+	void Flush();
+
+private:
+	BbDeviceEffect*	m_Effect;
+	BBUC	m_Idx;
+};
+
+class BbDeviceEffectSampler
+{
+public:
+	BbDeviceEffectSampler();
+	BbDeviceEffectSampler( BbDeviceEffect* eft, BBUC idx );
+	void Set( BbDevStateSampler* state );
+
+private:
+	BbDeviceEffect*	m_Effect;
+	BBUC	m_Idx;
+};
+
+class BbDeviceEffectTex
+{
+public:
+	BbDeviceEffectTex();
+	BbDeviceEffectTex( BbDeviceEffect* eft, BBUC idx );
+	void Set( BbDevTex1D* tex );
+	void Set( BbDevTex2D* tex );
+	void Set( BbDevRenderTarget* rt );
+	void Set( BbDevDepthStencil* ds );
+
+private:
+	BbDeviceEffect*	m_Effect;
+	BBUC	m_Idx;
+};
+
+class BbDeviceEffectVar
+{
+public:
+	BbDeviceEffectVar();
+	BbDeviceEffectVar( BbDeviceEffect* eft, BBUC idx, BBUL size, BBUL off );
+	void SetFloat( float f );
+	void SetFloatArray( float* pf, UINT count );
+	void SetFloat2( const D3DXVECTOR2& f2 );
+	void SetFloat3( const D3DXVECTOR3& f3 );
+	void SetFloat4( const D3DXVECTOR4& f4 );
+	void SetMatrix( const D3DXMATRIX* pMatrix );
+	void SetMatrixSet( const D3DXMATRIX* pMatrix );
+
+private:
+	BbDeviceEffect*	m_Effect;
+	BBUL	m_Size;
+	BBUL	m_Off;
+	BBUC	m_Idx;
+};
 
 //////////////////////////////////////////////////////////////////////////
 
 class BbDeviceEffect
 {
+	struct PackSlot
+	{
+		D3D_SHADER_INPUT_TYPE type;
+		BBUC count;
+		BBUC point;
+		BBUC idx;
+		PackSlot() : type(D3D_SIT_UAV_RWSTRUCTURED_WITH_COUNTER), count(BBUC_MAX), point(BBUC_MAX), idx(BBUC_MAX) {;}
+	};
+
+	typedef std::vector<PackSlot>	PackSlotArray;
+
 	struct PackBase
 	{
 		BbString name;
 		BbStringHash namehash;
-		std::vector<BBUC>	slotbufc;
-		std::vector<BBUC>	slotsam;
-		std::vector<BBUC>	slotsrv;
+		PackSlotArray	slot;
 	};
 
 	struct PackVertex : public PackBase
 	{
-		BbDevLayout layout;
 		ID3D11VertexShader* vs;
-		PackVertex() : vs(nullptr) {;}
+		ID3D11InputLayout* il;
+		PackVertex() : vs(nullptr), il(nullptr) {;}
 	};
 
 	struct PackHull : public PackBase
@@ -48,63 +123,48 @@ class BbDeviceEffect
 		PackPixel() : ps(nullptr) {;}
 	};
 
-	struct PackTech : public PackBase
+	struct PackTech
 	{
-		BbDevLayout layout;
-		ID3D11VertexShader* vs;
-		ID3D11HullShader* hs;
-		ID3D11GeometryShader* gs;
-		ID3D11DomainShader* ds;
-		ID3D11PixelShader* ps;
-		PackTech() : vs(nullptr), hs(nullptr), gs(nullptr), ds(nullptr), ps(nullptr) {;}
+		BbString name;
+		BbStringHash namehash;
+		BbDevStateBlend stateBlend;
+		BbDevStateDepthStencil stateDepthStl;
+		BbDevStateRasterizer stateRstrz;
+		BBUC	vs, hs, gs, ds, ps;
+		PackTech() : vs(BBUC_MAX), hs(BBUC_MAX), gs(BBUC_MAX), ds(BBUC_MAX), ps(BBUC_MAX) {;}
 	};
 
 	struct SlotBufConst
 	{
-		BbString name;		
-		BbDevBufConst*	bc;
-		BBUC slot[BB_PIPE_TYPE_COUNT];
-		SlotBufConst()
-		{
-			bc = nullptr;
-			slot[BB_PIPE_TYPE_VS] =
-			slot[BB_PIPE_TYPE_HS] =
-			slot[BB_PIPE_TYPE_GS] =
-			slot[BB_PIPE_TYPE_DS] =
-			slot[BB_PIPE_TYPE_PS] = 0xFF;
-		}
+		BbString name;
+		BbStringHash namehash;
+		BbDevBufConst	bc;
+		bool update;
 	};
 
 	struct SlotSampler
 	{
 		BbString name;
-		BbDevStateSampler* ss;
-		BBUC slot[BB_PIPE_TYPE_COUNT];
-		SlotSampler()
-		{
-			ss = nullptr;
-			slot[BB_PIPE_TYPE_VS] =
-			slot[BB_PIPE_TYPE_HS] =
-			slot[BB_PIPE_TYPE_GS] =
-			slot[BB_PIPE_TYPE_DS] =
-			slot[BB_PIPE_TYPE_PS] = 0xFF;
-		}
+		BbStringHash namehash;
+		BbDevStateSampler ss;
+		bool update;
 	};
 
 	struct SlotSrv
 	{
 		BbString name;
-		BbDevDataSrv* ds;
-		BBUC slot[BB_PIPE_TYPE_COUNT];
-		SlotSrv()
-		{
-			ds = nullptr;
-			slot[BB_PIPE_TYPE_VS] =
-			slot[BB_PIPE_TYPE_HS] =
-			slot[BB_PIPE_TYPE_GS] =
-			slot[BB_PIPE_TYPE_DS] =
-			slot[BB_PIPE_TYPE_PS] = 0xFF;
-		}
+		BbStringHash namehash;
+		BbDevSrvItl* srv;
+		bool update;
+	};
+
+	struct SlotBufConstVar
+	{
+		BbString name;
+		BbStringHash namehash;
+		BBUL off;
+		BBUL size;
+		BBUC idx;
 	};
 
 	typedef std::vector<PackTech>		PackTechArray;
@@ -118,44 +178,40 @@ class BbDeviceEffect
 	typedef std::vector<SlotSampler>	SlotSamplerArray;
 	typedef std::vector<SlotSrv>		SlotSrvArray;
 
-	typedef std::list<BbDevBufConst>	DevBufConstList;
+	typedef std::map<BbStringHash,SlotBufConstVar>	SlotBufConstVarMap;
 
 public:
 	BbDeviceEffect();
 	~BbDeviceEffect();
 
 	void Destroy();
-	void InitVertex( const char* src, BbLoadFromTypeE srctype, const char* func, BbDevLayoutDesc* ld );
- 	void InitPixel( const char* src, BbLoadFromTypeE srctype, const char* func );
-	void InitHull( const char* src, BbLoadFromTypeE srctype, const char* func );
-	void InitDomain( const char* src, BbLoadFromTypeE srctype, const char* func );
-	void InitGeometry( const char* src, BbLoadFromTypeE srctype, const char* func );
- 	void InitTech( const char* name, const char* vs, const char* ps, const char* hs=NULL, const char* ds=NULL, const char*gs=NULL );
-// 	
-// 	void BeginEffect( const BbStringHash& name );
-// 	void EndEffect();
-// 
-// 	void SetImmutable( const std::string& name, const void* src );
-// 	void SetContentDataInterTech( const std::string& str, ContentData* data );	// 参数赋值 流程太复杂 需要重新考虑
-// 
-// 	void SetFloat( const std::string& str, float f );
-// 	void SetFloatArray( const std::string& str, float* pf, UINT count );
-// 	void SetFloat2( const std::string& str, const D3DXVECTOR2& f2 );
-// 	void SetFloat3( const std::string& str, const D3DXVECTOR3& f3 );
-// 	void SetFloat4( const std::string& str, const D3DXVECTOR4& f4 );
-// 	void SetMatrix( const std::string& str, const D3DXMATRIX* pMatrix );
-// 	void SetMatrixTranspose( const std::string& str, const D3DXMATRIX* pMatrix );
-// 	void SetTexture( const std::string& str, const ContentDataSRV* tex );
+	void InitVertex( const BbFileData* data, const char* func, BbDevLayoutDesc* desc );
+ 	void InitPixel( const BbFileData* data, const char* func );
+	void InitHull( const BbFileData* data, const char* func );
+	void InitDomain( const BbFileData* data, const char* func );
+	void InitGeometry( const BbFileData* data, const char* func );
+ 	void InitTech( const char* name, BbDevStateBlend* sb, BbDevStateDepthStencil* sds, BbDevStateRasterizer* sr, const char* vs, const char* ps, const char* hs=nullptr, const char* ds=nullptr, const char*gs=nullptr );
+
+	void BeginTech( BBUC idx );
+	void EndTech();
+	void FlushTech();
+	void SetStateSampler( BBUC idx, BbDevStateSampler* state );
+	void SetTexSrv( BBUC idx, BbDevSrvItl* srv );
+	void SetCbufVar( BBUC idx, void* src, BBUL size, BBUL off );
+
+	BbDeviceEffectTech GetTech( const char* name );
+	BbDeviceEffectSampler GetSampler( const char* name );
+	BbDeviceEffectTex GetTexture( const char* name );
+	BbDeviceEffectVar GetVariable( const char* name );
 
 private:
-	HRESULT InitCompiler( const char* src, BbLoadFromTypeE srctype, const char* func, const char* profile, ID3DBlob** bs, ID3DBlob** be );
-	void InitVertexFromBlob( ID3DBlob* pBlob, const char* func, BbDevLayoutDesc* ld );
-	//void InitPixelFromBlob( ID3DBlob* pBlob, const std::string& func );
-	void OnBlobError( ID3DBlob*& error );
- 	void OnReflect( PackBase* pb, BbPipeTypeE type, ID3DBlob* blob  );
-// 	void SetValue( const std::string& str, const void* src, UINT size );
-// 	UINT GetRealData( const std::string& str );
-// 	UINT GetSectionData( const std::string& str );
+	bool InitCompiler( const BbFileData* data, const char* func, const char* profile, ID3DBlob** bs );
+ 	void OnReflect( PackBase* pb, ID3DBlob* blob  );
+	void OnReflectCbuffer( PackBase* pb, ID3D11ShaderReflection* reflection, D3D11_SHADER_INPUT_BIND_DESC* sibd );
+	void OnReflectTexture( PackBase* pb, D3D11_SHADER_INPUT_BIND_DESC* sibd );
+	void OnReflectSampler( PackBase* pb, D3D11_SHADER_INPUT_BIND_DESC* sibd );
+	void SetSlotAll( PackSlotArray* psa, BBUC pipe );
+	void SetSlotUpdate( PackSlotArray* psa, BBUC pipe );
 
 private:
 	PackTechArray			m_aTech;
@@ -169,42 +225,25 @@ private:
 	SlotSamplerArray		m_aSlotSam;
 	SlotSrvArray			m_aSlotSrv;
 
-	DevBufConstList			m_lBufConst;
+	SlotBufConstVarMap		m_mSlotBcVar;
+
+	BBUC					m_ActiveTech;
 
 private:
 	template<class T>
-	BBUC FindArrayPos( const std::vector<T>* arr, const char* str )
+	BBUC GetIdxFromArray( const std::vector<T>* arr, const char* name )
 	{
-		BbStringHash sh(str);
-		arr::size_type i(0), size(arr->size());
-		while( i<size )
+		if ( nullptr!=name )
 		{
-			if ( arr->at(i).namehash == sh )
+			BbStringHash sh( name );
+			for ( BBUC i(0), size(static_cast<BBUC>(arr->size())); i<size; ++i )
 			{
-				break;
-			}
-			++i;
-		}
-		return static_cast<BBUC>(i);
-	}
-	template<class T>
-	T* FindArrayPtr( const std::vector<T>* arr, const char* str )
-	{
-		T* ptr = nullptr;
-		if ( nullptr!=str )
-		{
-			BbStringHash sh(str);
-			arr::size_type i(0), size(arr->size());
-			while( i<size )
-			{
-				if ( arr->at(i).namehash == sh )
+				if ( sh==arr->at(i).namehash )
 				{
-					ptr = &arr->at(i);
-					break;
+					return i;
 				}
-				++i;
-			}			
+			}
 		}
-		return ptr;
+		return BBUC_MAX;
 	}
 };

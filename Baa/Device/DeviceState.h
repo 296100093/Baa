@@ -1,83 +1,107 @@
 #pragma once
 
-#include "DeviceData.h"
+#include "DeviceDef.h"
+
 
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
 
-class BbDevStateBlend : public BbDevData
+class BbDevStateBlend
 {
 public:
-	static BbDevStateBlend* Create( D3D11_BLEND_DESC* desc );
+	BB_DEV_SMART_REF_DECL(BbDevStateBlend);
 
-public:
-	BbDevStateBlend( ID3D11BlendState* state );
-
-	void SetBlendFactor( float f0, float f1, float f2, float f3 );
-	void SetSampleMask( UINT mask );
-	float*	BlendFactor();
-	UINT	SampleMask();
-	ID3D11BlendState*	State();
+	void Create(D3D11_BLEND_DESC* desc);
+	void SetBlendFactor(float f0, float f1, float f2, float f3);
+	void SetSampleMask(BBUL mask);
+	void Active();
 private:
-	float							m_BlendFactor[4];
-	ID3D11BlendState*	m_BlendState;
-	UINT						m_SampleMask;
-	bool							m_Dirty;
+	BBUL	m_Idx;
 };
 
 //////////////////////////////////////////////////////////////////////////
 
-class BbDevStateDepthStencil : public BbDevData
+class BbDevStateDepthStencil
 {
 public:
-	static BbDevStateDepthStencil* Create( D3D11_DEPTH_STENCIL_DESC* desc );
+	BB_DEV_SMART_REF_DECL(BbDevStateDepthStencil);
 
+	void Create( D3D11_DEPTH_STENCIL_DESC* desc );
+	void SetStencilRef(BBUL ref);
+	void Active();
+private:
+	BBUL	m_Idx;
+};
+
+//////////////////////////////////////////////////////////////////////////
+
+class BbDevStateRasterizer
+{
 public:
-	BbDevStateDepthStencil( ID3D11DepthStencilState* state );
-	
-	void SetStencilRef( UINT ref );
-	UINT StencilRef();
-	ID3D11DepthStencilState*	State();
+	BB_DEV_SMART_REF_DECL(BbDevStateRasterizer);
+
+	void Create( D3D11_RASTERIZER_DESC* desc );
+	void Active();
+private:
+	BBUL	m_Idx;
+};
+
+//////////////////////////////////////////////////////////////////////////
+
+class BbDevStateSampler
+{
+public:
+	BB_DEV_SMART_REF_DECL(BbDevStateSampler);
+
+	void Create( D3D11_SAMPLER_DESC* desc );
+	BBUL Data() const;
+private:
+	BBUL	m_Idx;
+};
+
+//////////////////////////////////////////////////////////////////////////
+
+class BbDevLayoutDesc
+{
+	typedef std::vector<D3D11_INPUT_ELEMENT_DESC>	EleDescArray;
+	typedef std::list<BbString>		StrBuf;
+public:
+	void Add( const char* name, BbLayoutFmtTypeE fmt );
+	D3D11_INPUT_ELEMENT_DESC* Buf();
+	BBUL Count();
 
 private:	
-	ID3D11DepthStencilState*	m_DepthStencilState;
-	UINT	m_StencilRef;
+	DXGI_FORMAT TurnFmt( BbLayoutFmtTypeE fmt );
+	UINT		TurnSize( DXGI_FORMAT fmt );
+	UINT		CalcOffset();
+
+public:
+	EleDescArray		m_Desc;
+	StrBuf				m_StrBuf;
 };
 
 //////////////////////////////////////////////////////////////////////////
 
-class BbDevStateRasterizer : public BbDevData
+class BbDevViewPort
 {
 public:
-	static BbDevStateRasterizer* Create( D3D11_RASTERIZER_DESC* desc );
-
-public:
-	BbDevStateRasterizer( ID3D11RasterizerState* state );
-	
-	ID3D11RasterizerState*	State();
+	BbDevViewPort();
+	void Init( BBUL width, BBUL height );
+	void Active();
 
 private:
-	ID3D11RasterizerState*	m_RasterizerState;
+	D3D11_VIEWPORT	m_ViewPort;
 };
 
 //////////////////////////////////////////////////////////////////////////
 
-class BbDevStateSampler : public BbDevData
+class BbDevToplogy
 {
 public:
-	static BbDevStateSampler* Create( D3D11_SAMPLER_DESC* desc );
+	BbDevToplogy();
+	void Init( D3D11_PRIMITIVE_TOPOLOGY topo );
+	void Active();
 
-public:
-	BbDevStateSampler( ID3D11SamplerState* state );
-
-	void RefSlotAdd( BBUC pipe, BBUC slot );
-	void RefSlotSub( BBUC pipe, BBUC slot );
-	void RefSlotClear();
-	ID3D11SamplerState*		State();
 private:
-	ID3D11SamplerState*		m_SamplerState;
-	BBUC		m_Slot[BB_PIPE_TYPE_COUNT];
-	BBUC		m_AttachSlot;
+	D3D11_PRIMITIVE_TOPOLOGY	m_Topo;
 };
-
-//////////////////////////////////////////////////////////////////////////

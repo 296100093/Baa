@@ -1,4 +1,5 @@
 #include "DeviceDirect.h"
+#include "DeviceDataMgr.h"
 
 unsigned long BbDeviceDirect::GetModId()
 {
@@ -8,28 +9,17 @@ unsigned long BbDeviceDirect::GetModId()
 
 void BbDeviceDirect::Init()
 {
-	m_CurStateBlend = nullptr;
-	m_CurStateDepthStencil = nullptr;
-	m_CurStateRasterizer = nullptr;
-	m_CurViewPort = nullptr;
-	m_CurDepthStencil = nullptr;
-	m_CurLayout = nullptr;
-	m_CurBufVertex = nullptr;
-	m_CurBufIndex = nullptr;
-
-	m_Device = nullptr;
-	m_Context = nullptr;
-	m_SwapChain = nullptr;
-
-	m_Width = 0;
-	m_Height = 0;
-	m_Init = false;
+	BeNull();
+	m_DataMgr = new BbDeviceDataMgr();
+	m_RenderPadItl = new BbDevRenderPadItl();
 }
 
-bool BbDeviceDirect::Init( BBS width, BBS height, HWND hwnd )
+bool BbDeviceDirect::InitDevice( BBUL width, BBUL height, HWND hwnd )
 {
 	if ( 0<width && 0<height )
 	{
+		m_Width = width;
+		m_Height = height;
 		DXGI_SWAP_CHAIN_DESC dscd;
 		D3D_FEATURE_LEVEL dflIn = D3D_FEATURE_LEVEL_11_0;
 		D3D_FEATURE_LEVEL dflOut;
@@ -97,13 +87,21 @@ bool BbDeviceDirect::Init( BBS width, BBS height, HWND hwnd )
 	return m_Init;
 }
 
+void BbDeviceDirect::ResetDevice( BBUL width, BBUL height )
+{
+	width;
+	height;
+}
+
 void BbDeviceDirect::Destroy()
 {
-	DestroyDefault();
+	m_DataMgr->Destroy();
+	delete m_DataMgr;
+	delete m_RenderPadItl;
 	BB_SAFE_RELEASE( m_SwapChain );
 	BB_SAFE_RELEASE( m_Context );
 	BB_SAFE_RELEASE( m_Device );
-	m_Init = false;
+	BeNull();
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -113,106 +111,87 @@ void BbDeviceDirect::Present()
 	m_SwapChain->Present( 0, 0 );
 }
 
-void BbDeviceDirect::ClearRtv( const BbDevRenderTarget* rt/* =nullptr */, const BbColor color/* =BbColor(0.0f,0.0f,0.0f,0.0f) */ )
-{
-	if ( nullptr==rt )
-	{
-		rt = m_CurRenderTarget[0];
-	}
-	m_Context->ClearRenderTargetView( rt->Rtv(), color.Data() );
-}
-
-void BbDeviceDirect::ClearDsv( const BbDevDepthStencil* ds/* =nullptr */, UINT flag/* =D3D11_CLEAR_DEPTH|D3D11_CLEAR_STENCIL */, float depth/* =1.0f */, UINT8 stencil/* =0 */ )
-{
-	if ( nullptr==ds )
-	{
-		ds = m_CurDepthStencil;
-	}
-	m_Context->ClearDepthStencilView( ds->Dsv(), flag, depth, stencil );
-}
-
 //////////////////////////////////////////////////////////////////////////
 
-void BbDeviceDirect::ActiveStateBlend( BbDevStateBlend* state )
+void BbDeviceDirect::ActiveStateBlend( BbDevStateBlendItl* state )
 {
-	if ( nullptr==state )
-	{
-		state = &m_DefaultStateBlend;
-	}
 	if ( state!=m_CurStateBlend )
 	{
-		m_CurStateBlend->Detach();
-		state->Attach();
-		m_Context->OMSetBlendState( state->State(), state->BlendFactor(), state->SampleMask() );
+		m_CurStateBlend->RefSub();
+		state->RefAdd();
 		m_CurStateBlend = state;
+		m_Context->OMSetBlendState( state->State(), state->BlendFactor(), state->SampleMask() );		
 	}
 }
 
-void BbDeviceDirect::ActiveStateDepthStencil( BbDevStateDepthStencil* state )
+void BbDeviceDirect::ActiveStateDepthStencil( BbDevStateDepthStencilItl* state )
 {
-	if ( nullptr==state )
-	{
-		state = &m_DefaultStateDepthStencil;
-	}
 	if ( state!=m_CurStateDepthStencil )
 	{
-		m_CurStateDepthStencil->Detach();
-		state->Attach();
-		m_Context->OMSetDepthStencilState( state->State(), state->Ref() );
+		m_CurStateDepthStencil->RefSub();
+		state->RefAdd();
+		m_Context->OMSetDepthStencilState( state->State(), state->StencilRef() );
 		m_CurStateDepthStencil = state;
 	}
 }
 
-void BbDeviceDirect::ActiveStateRasterizer( BbDevStateRasterizer* state )
+void BbDeviceDirect::ActiveStateRasterizer( BbDevStateRasterizerItl* state )
 {
-	if ( nullptr==state )
-	{
-		state = &m_DefaultStateRasterizer;
-	}
 	if ( state!=m_CurStateRasterizer )
 	{
-		m_CurStateRasterizer->Detach();
-		state->Attach();
+		m_CurStateRasterizer->RefSub();
+		state->RefAdd();
 		m_Context->RSSetState( state->State() );
 		m_CurStateRasterizer = state;
 	}
 }
 
-void BbDeviceDirect::ActiveViewPort( BbDevViewPort* vp )
+void BbDeviceDirect::ActiveStateSampler( BbDevStateSamplerItl* state, BBUC pipe, BBUC slot )
 {
-	if ( nullptr==vp )
+	if ( state!=m_PipeSampler[pipe][slot] )
 	{
-		vp = &m_DefaultViewPort;
-	}
-	if ( vp!=m_CurViewPort )
-	{
-		m_CurViewPort->Detach();
-		vp->Attach();
-		m_Context->RSSetViewports( 1, vp->Vp() );
-		m_CurViewPort = vp;
+		ID3D11SamplerState** pdss = nullptr;
+		ID3D11SamplerState* dss = nullptr;
+		if ( nullptr!=m_PipeSampler[pipe][slot] )
+		{
+			m_PipeSampler[pipe][slot]->RefSub();
+		}
+		m_PipeSampler[pipe][slot] = state;
+		if ( nullptr!=state )
+		{
+			state->RefAdd();
+			dss = state->State();
+			pdss = &dss;
+		}
+		switch( pipe )
+		{
+		case BB_PIPE_TYPE_VS:	m_Context->VSSetSamplers( slot, 1, pdss );	break;
+		case BB_PIPE_TYPE_HS:	m_Context->HSSetSamplers( slot, 1, pdss );	break;
+		case BB_PIPE_TYPE_GS:	m_Context->GSSetSamplers( slot, 1, pdss );	break;
+		case BB_PIPE_TYPE_DS:	m_Context->DSSetSamplers( slot, 1, pdss );	break;
+		case BB_PIPE_TYPE_PS:	m_Context->PSSetSamplers( slot, 1, pdss );	break;
+		default:	break;
+		}	
 	}
 }
 
-void BbDeviceDirect::ActiveDepthStencil( BbDevDepthStencil* ds )
+//////////////////////////////////////////////////////////////////////////
+
+void BbDeviceDirect::ActiveLayout( ID3D11InputLayout* il )
 {
-	if ( nullptr==ds )
+	if ( il!=m_CurLayout )
 	{
-		ds = &m_DefaultDepthStencil;
+		m_Context->IASetInputLayout( il );
+		m_CurLayout = il;
 	}
-	if ( ds!=m_CurDepthStencil )
+}
+
+void BbDeviceDirect::ActiveViewPort( D3D11_VIEWPORT* vp )
+{
+	if ( 0!=memcpy_s( vp, sizeof(D3D11_VIEWPORT), &m_CurViewPort, sizeof(D3D11_VIEWPORT) ) )
 	{
-		m_CurDepthStencil->Detach();
-		ds->Attach();
-		BBUL count = 0;
-		ID3D11RenderTargetView*	rtv[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];		
-		memset( rtv, 0, sizeof(ID3D11RenderTargetView*)*D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT );
-		while ( count<D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT && nullptr!=m_CurRenderTarget[count] )
-		{
-			rtv[count] = m_CurRenderTarget[count]->Rtv();
-			++count;
-		}
-		m_Context->OMSetRenderTargets( count, rtv, ds->Dsv() );
-		m_CurDepthStencil = ds;
+		m_CurViewPort = *vp;
+		m_Context->RSSetViewports( 1, vp );
 	}
 }
 
@@ -225,34 +204,15 @@ void BbDeviceDirect::ActiveTopology( D3D11_PRIMITIVE_TOPOLOGY topo )
 	}
 }
 
-void BbDeviceDirect::ActiveLayout( BbDevLayout* ly )
-{
-	if ( ly!=m_CurLayout )
-	{
-		if ( nullptr!=m_CurLayout )
-		{
-			m_CurLayout->Detach();
-		}
-		if ( nullptr==ly )
-		{
-			m_Context->IASetInputLayout( nullptr );
-		}
-		else
-		{
-			ly->Attach();
-			m_Context->IASetInputLayout( ly->Layout() );
-		}
-		m_CurLayout = ly;
-	}
-}
+//////////////////////////////////////////////////////////////////////////
 
-void BbDeviceDirect::ActiveBufVertex( BbDevBufVertex* bv, UINT off )
+void BbDeviceDirect::ActiveBufVertex( BbDevBufVertexItl* bv, BBUL off )
 {
 	if ( bv!=m_CurBufVertex )
 	{
 		if ( nullptr!=m_CurBufVertex )
 		{
-			m_CurBufVertex->Detach();
+			m_CurBufVertex->RefSub();
 		}
 		if ( nullptr==bv )
 		{
@@ -260,22 +220,23 @@ void BbDeviceDirect::ActiveBufVertex( BbDevBufVertex* bv, UINT off )
 		}
 		else
 		{
-			bv->Attach();
+			bv->RefAdd();
 			ID3D11Buffer* b = bv->Buf();
 			UINT stride = bv->Stride();
-			m_Context->IASetVertexBuffers( 0, 1, &b, &stride, &off );
+			UINT offff = off;
+			m_Context->IASetVertexBuffers( 0, 1, &b, &stride, &offff );
 		}
 		m_CurBufVertex = bv;
 	}
 }
 
-void BbDeviceDirect::ActiveBufIndex( BbDevBufIndex* bi, UINT off )
+void BbDeviceDirect::ActiveBufIndex( BbDevBufIndexItl* bi, BBUL off )
 {
 	if ( bi!=m_CurBufIndex )
 	{
 		if ( nullptr!=m_CurBufIndex )
 		{
-			m_CurBufIndex->Detach();
+			m_CurBufIndex->RefSub();
 		}
 		if ( nullptr==bi )
 		{
@@ -283,231 +244,152 @@ void BbDeviceDirect::ActiveBufIndex( BbDevBufIndex* bi, UINT off )
 		}
 		else
 		{
-			bi->Attach();			
+			bi->RefAdd();
 			m_Context->IASetIndexBuffer( bi->Buf(), bi->Format(), off );
 		}
 		m_CurBufIndex = bi;
 	}
 }
 
-//////////////////////////////////////////////////////////////////////////
-
-void BbDeviceDirect::ActiveRenderTarget( BbDevRenderTarget** rt, BBUC count )
+void BbDeviceDirect::ActiveBufConst( ID3D11Buffer* dbc, BBUC pipe, BBUC slot )
 {
-	bool rtsame = true;
-	BbDevRenderTarget* art[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
-	ID3D11RenderTargetView*	rtv[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
-	memset( art, 0 , sizeof(BbDevRenderTarget*)*D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT );
-	memset( rtv, 0, sizeof(ID3D11RenderTargetView*)*D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT );
-
-	if ( nullptr==rt || 0==count )
-	{
-		art[0] = &m_DefaultRenderTarget;
-		count = 1;
-	}
-	else
-	{
-		if ( D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT<count )
-		{
-			count = D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT;
-		}
-		for ( BBUL i(0); i<count; ++i )
-		{
-			art[i] = rt[i];
-		}
-	}
-
-	for ( BBUL i(0); i<D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; ++i )
-	{
-		if ( art[i]!=m_CurRenderTarget[i] )		rtsame = false;
-		if ( nullptr!=m_CurRenderTarget[i] )	m_CurRenderTarget[i]->DetachRtv();
-		if ( nullptr!=art[i] )					art[i]->AttachRtv();
-		m_CurRenderTarget[i] = art[i];
-	}
-	if ( !rtsame )
-	{
-		for ( BBUL i(0); i<count; ++i )
-		{
-			rtv[i] = art[i]->Rtv();
-		}
-		m_Context->OMSetRenderTargets( count, rtv, m_CurDepthStencil->Dsv() );
-	}
-}
-
-void BbDeviceDirect::ActiveStateSampler( BbDevStateSampler* ss, BBUC pipe, BBUC slot )
-{
-	if ( ss!=m_PipeSampler[pipe][slot] )
-	{
-		DeActiveStateSampler( pipe, slot );
-		if ( nullptr!=ss )
-		{
-			ID3D11SamplerState* dss = ss->State();
-			ss->AttachS( pipe, slot );
-			switch( pipe )
-			{
-			case BB_PIPE_TYPE_VS:	m_Context->VSSetSamplers( slot, 1, &dss );	break;
-			case BB_PIPE_TYPE_HS:	m_Context->HSSetSamplers( slot, 1, &dss );	break;
-			case BB_PIPE_TYPE_GS:	m_Context->GSSetSamplers( slot, 1, &dss );	break;
-			case BB_PIPE_TYPE_DS:	m_Context->DSSetSamplers( slot, 1, &dss );	break;
-			case BB_PIPE_TYPE_PS:	m_Context->PSSetSamplers( slot, 1, &dss );	break;
-			default:	break;
-			}			
-		}
-		m_PipeSampler[pipe][slot] = ss;
-	}
-}
-
-void BbDeviceDirect::ActiveSrv( BbDevDataSrv* dds, BBUC pipe, BBUC slot )
-{
-	if ( dds!=m_PipeSrv[pipe][slot] )
-	{
-		DeActiveSrv( pipe, slot );
-		if ( nullptr!=dds )
-		{
-			ID3D11ShaderResourceView* srv = dds->Srv();
-			dds->AttachSrv( pipe, slot );
-			switch( pipe )
-			{
-			case BB_PIPE_TYPE_VS:	m_Context->VSSetShaderResources( slot, 1, &srv );	break;
-			case BB_PIPE_TYPE_HS:	m_Context->HSSetShaderResources( slot, 1, &srv );	break;
-			case BB_PIPE_TYPE_GS:	m_Context->GSSetShaderResources( slot, 1, &srv );	break;
-			case BB_PIPE_TYPE_DS:	m_Context->DSSetShaderResources( slot, 1, &srv );	break;
-			case BB_PIPE_TYPE_PS:	m_Context->PSSetShaderResources( slot, 1, &srv );	break;
-			default:	break;
-			}
-		}
-		m_PipeSrv[pipe][slot] = dds;
-	}
-}
-
-void BbDeviceDirect::ActiveConst( BbDevBufConst* dbc, BBUC pipe, BBUC slot )
-{
-	dbc->Commit();
 	if ( dbc!=m_PipeBufConst[pipe][slot] )
 	{
-		DeActiveSrv( pipe, slot );
-		if ( nullptr!=dbc )
-		{
-			ID3D11Buffer* buf = dbc->Buf();
-			dbc->AttachConst( pipe, slot );
-			switch( pipe )
-			{
-			case BB_PIPE_TYPE_VS:	m_Context->VSSetConstantBuffers( slot, 1, &buf );	break;
-			case BB_PIPE_TYPE_HS:	m_Context->HSSetConstantBuffers( slot, 1, &buf );	break;
-			case BB_PIPE_TYPE_GS:	m_Context->GSSetConstantBuffers( slot, 1, &buf );	break;
-			case BB_PIPE_TYPE_DS:	m_Context->DSSetConstantBuffers( slot, 1, &buf );	break;
-			case BB_PIPE_TYPE_PS:	m_Context->PSSetConstantBuffers( slot, 1, &buf );	break;
-			default:	break;
-			}
-		}
+		ID3D11Buffer** pbuf = &dbc;
 		m_PipeBufConst[pipe][slot] = dbc;
-	}
-}
-
-void BbDeviceDirect::DeActiveConst( BBUC pipe, BBUC slot )
-{
-	if ( nullptr!=m_PipeBufConst[pipe][slot] )
-	{
 		switch( pipe )
 		{
-		case BB_PIPE_TYPE_VS:	m_Context->VSSetConstantBuffers( slot, 1, nullptr );	break;
-		case BB_PIPE_TYPE_HS:	m_Context->HSSetConstantBuffers( slot, 1, nullptr );	break;
-		case BB_PIPE_TYPE_GS:	m_Context->GSSetConstantBuffers( slot, 1, nullptr );	break;
-		case BB_PIPE_TYPE_DS:	m_Context->DSSetConstantBuffers( slot, 1, nullptr );	break;
-		case BB_PIPE_TYPE_PS:	m_Context->PSSetConstantBuffers( slot, 1, nullptr );	break;
+		case BB_PIPE_TYPE_VS:	m_Context->VSSetConstantBuffers( slot, 1, pbuf );	break;
+		case BB_PIPE_TYPE_HS:	m_Context->HSSetConstantBuffers( slot, 1, pbuf );	break;
+		case BB_PIPE_TYPE_GS:	m_Context->GSSetConstantBuffers( slot, 1, pbuf );	break;
+		case BB_PIPE_TYPE_DS:	m_Context->DSSetConstantBuffers( slot, 1, pbuf );	break;
+		case BB_PIPE_TYPE_PS:	m_Context->PSSetConstantBuffers( slot, 1, pbuf );	break;
 		default:	break;
 		}
-		m_PipeBufConst[pipe][slot]->DetachConst( pipe, slot );
-		m_PipeBufConst[pipe][slot] = nullptr;
 	}
-}
-
-void BbDeviceDirect::DeActiveSrv( BBUC pipe, BBUC slot )
-{
-	if ( nullptr!=m_PipeSrv[pipe][slot] )
-	{
-		switch( pipe )
-		{
-		case BB_PIPE_TYPE_VS:	m_Context->VSSetShaderResources( slot, 1, nullptr );	break;
-		case BB_PIPE_TYPE_HS:	m_Context->HSSetShaderResources( slot, 1, nullptr );	break;
-		case BB_PIPE_TYPE_GS:	m_Context->GSSetShaderResources( slot, 1, nullptr );	break;
-		case BB_PIPE_TYPE_DS:	m_Context->DSSetShaderResources( slot, 1, nullptr );	break;
-		case BB_PIPE_TYPE_PS:	m_Context->PSSetShaderResources( slot, 1, nullptr );	break;
-		default:	break;
-		}
-		m_PipeSrv[pipe][slot]->DetachSrv( pipe, slot );
-		m_PipeSrv[pipe][slot] = nullptr;
-	}
-}
-
-void BbDeviceDirect::DeActiveStateSampler( BBUC pipe, BBUC slot )
-{
-	if ( nullptr!=m_PipeSampler[pipe][slot] )
-	{
-		switch( pipe )
-		{
-		case BB_PIPE_TYPE_VS:	m_Context->VSSetSamplers( slot, 1, nullptr );	break;
-		case BB_PIPE_TYPE_HS:	m_Context->HSSetSamplers( slot, 1, nullptr );	break;
-		case BB_PIPE_TYPE_GS:	m_Context->GSSetSamplers( slot, 1, nullptr );	break;
-		case BB_PIPE_TYPE_DS:	m_Context->DSSetSamplers( slot, 1, nullptr );	break;
-		case BB_PIPE_TYPE_PS:	m_Context->PSSetSamplers( slot, 1, nullptr );	break;
-		default:	break;
-		}
-		m_PipeSampler[pipe][slot]->DetachS( pipe, slot );
-		m_PipeSampler[pipe][slot] = nullptr;
-	}
-}
-
-void BbDeviceDirect::DeActiveRenderTarget()
-{
-	BBUC i=0;
-	while ( i<D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT && nullptr!=m_CurRenderTarget[i] )
-	{
-		m_CurRenderTarget[i]->DetachRtv();
-		m_CurRenderTarget[i] = nullptr;
-		++i;
-	}
-	m_DefaultRenderTarget.AttachRtv();
-	m_CurRenderTarget[0] = &m_DefaultRenderTarget;
-	ID3D11RenderTargetView* rtv = m_DefaultRenderTarget.Rtv();
-	m_Context->OMSetRenderTargets( 1, &rtv, m_CurDepthStencil->Dsv() );
 }
 
 //////////////////////////////////////////////////////////////////////////
 
-ID3D11Device* BbDeviceDirect::Device() const
+void BbDeviceDirect::ActiveRenderPad( BbDevRenderPad* pad )
+{
+	if ( 0!=memcpy_s( pad, sizeof(BbDevRenderPad), &m_RenderPad, sizeof(BbDevRenderPad) ) )
+	{
+		m_RenderPadItl->RefSub();
+		m_DataMgr->GetRenderPadItl( m_RenderPadItl, pad );
+		m_RenderPadItl->RefAdd();
+		BbDevRenderPadItl::PadItlData* data = &m_RenderPadItl->m_Data;
+		m_Context->OMSetRenderTargets( data->Count, data->Rtv, data->DepthStencil->Dsv() );
+	}
+}
+
+void BbDeviceDirect::ActiveSrv( BbDevSrvItl* srv, BBUC pipe, BBUC slot )
+{
+	if ( srv!=m_PipeSrv[pipe][slot] )
+	{
+		ID3D11ShaderResourceView* sss = nullptr;
+		ID3D11ShaderResourceView** psss = nullptr;
+		if ( nullptr!=m_PipeSrv[pipe][slot] )
+		{
+			m_PipeSrv[pipe][slot]->RefSub();
+		}
+		m_PipeSrv[pipe][slot] = srv;
+		if ( nullptr!=srv )
+		{
+			srv->RefAdd();
+			sss = srv->Srv();
+			psss = &sss;
+		}
+		switch( pipe )
+		{
+		case BB_PIPE_TYPE_VS:	m_Context->VSSetShaderResources( slot, 1, psss );	break;
+		case BB_PIPE_TYPE_HS:	m_Context->HSSetShaderResources( slot, 1, psss );	break;
+		case BB_PIPE_TYPE_GS:	m_Context->GSSetShaderResources( slot, 1, psss );	break;
+		case BB_PIPE_TYPE_DS:	m_Context->DSSetShaderResources( slot, 1, psss );	break;
+		case BB_PIPE_TYPE_PS:	m_Context->PSSetShaderResources( slot, 1, psss );	break;
+		default:	break;
+		}
+	}
+}
+
+//////////////////////////////////////////////////////////////////////////
+
+void BbDeviceDirect::ActiveVertexShader( ID3D11VertexShader* vs )
+{
+	if ( vs!=m_CurVertexShader )
+	{
+		m_CurVertexShader = vs;
+		m_Context->VSSetShader( vs, nullptr, 0 );
+	}
+}
+
+void BbDeviceDirect::ActivePixelShader( ID3D11PixelShader* ps )
+{
+	if ( ps!=m_CurPixelShader )
+	{
+		m_CurPixelShader = ps;
+		m_Context->PSSetShader( ps, nullptr, 0 );
+	}
+}
+
+void BbDeviceDirect::ActiveHullShader( ID3D11HullShader* hs )
+{
+	if ( hs!=m_CurHullShader )
+	{
+		m_CurHullShader = hs;
+		m_Context->HSSetShader( hs, nullptr, 0 );
+	}
+}
+
+void BbDeviceDirect::ActiveDomainShader( ID3D11DomainShader* ds )
+{
+	if ( ds!=m_CurDomainShader )
+	{
+		m_CurDomainShader = ds;
+		m_Context->DSSetShader( ds, nullptr, 0 );
+	}
+}
+
+void BbDeviceDirect::ActiveGeometryShader( ID3D11GeometryShader* gs )
+{
+	if ( gs!=m_CurGeometryShader )
+	{
+		m_CurGeometryShader = gs;
+		m_Context->GSSetShader( gs, nullptr, 0 );
+	}
+}
+
+//////////////////////////////////////////////////////////////////////////
+
+ID3D11Device* BbDeviceDirect::Device()
 {
 	return m_Device;
 }
 
-ID3D11DeviceContext* BbDeviceDirect::Context() const
+ID3D11DeviceContext* BbDeviceDirect::Context()
 {
 	return m_Context;
 }
 
-IDXGISwapChain* BbDeviceDirect::SwapChain() const
+IDXGISwapChain* BbDeviceDirect::SwapChain()
 {
 	return m_SwapChain;
 }
 
 BbDeviceDataMgr* BbDeviceDirect::DataMgr()
 {
-	return &m_DataMgr;
+	return m_DataMgr;
 }
 
 //////////////////////////////////////////////////////////////////////////
 
 void BbDeviceDirect::InitDefault()
 {
-	BbDevData::InitDevice( this );
-	InitDefaultData();
-	InitDefaultValue();
-}
+	m_DataMgr->Init( this );
 
-void BbDeviceDirect::InitDefaultData()
-{
 	//BlendNone
 	D3D11_BLEND_DESC bd;
+	memset( &bd, 0, sizeof(D3D11_BLEND_DESC) );
 	bd.AlphaToCoverageEnable					= FALSE;
 	bd.IndependentBlendEnable					= FALSE;
 	bd.RenderTarget[0].BlendEnable				= FALSE;
@@ -518,7 +400,10 @@ void BbDeviceDirect::InitDefaultData()
 	bd.RenderTarget[0].DestBlendAlpha			= D3D11_BLEND_ZERO;
 	bd.RenderTarget[0].BlendOpAlpha				= D3D11_BLEND_OP_ADD;
 	bd.RenderTarget[0].RenderTargetWriteMask	= D3D11_COLOR_WRITE_ENABLE_ALL;
-	m_DefaultStateBlend.Init( &bd );
+	BbDevStateBlendItl* blenditl = m_DataMgr->GetStateBlendItl(BBUL_MAX);
+	blenditl->Create( &bd );
+	ActiveStateBlend( blenditl );
+
 
 	//DepthLess
 	D3D11_DEPTH_STENCIL_DESC dsd;
@@ -536,7 +421,9 @@ void BbDeviceDirect::InitDefaultData()
 	dsd.BackFace.StencilDepthFailOp		= D3D11_STENCIL_OP_KEEP;
 	dsd.BackFace.StencilPassOp			= D3D11_STENCIL_OP_KEEP;
 	dsd.BackFace.StencilFunc			= D3D11_COMPARISON_ALWAYS;
-	m_DefaultStateDepthStencil.Init( &dsd );
+	BbDevStateDepthStencilItl* sdsitl = m_DataMgr->GetStateDepthStencilItl(BBUL_MAX);
+	sdsitl->Create( &dsd );
+	ActiveStateDepthStencil( sdsitl );
 
 	//CullBack
 	D3D11_RASTERIZER_DESC rsd;
@@ -550,101 +437,70 @@ void BbDeviceDirect::InitDefaultData()
 	rsd.ScissorEnable			= FALSE;
 	rsd.MultisampleEnable		= FALSE;
 	rsd.AntialiasedLineEnable	= FALSE;
-	m_DefaultStateRasterizer.Init( &rsd );
+	BbDevStateRasterizerItl* rtrzitl = m_DataMgr->GetStateRasterizerItl(BBUL_MAX);
+	rtrzitl->Create( &rsd );
+	ActiveStateRasterizer( rtrzitl );
 
 	//View Port
-	m_DefaultViewPort.Init( m_Width, m_Height );
+	D3D11_VIEWPORT vp;
+	vp.Width = static_cast< float >( m_Width );
+	vp.Height = static_cast< float >( m_Height );
+	vp.MaxDepth = 1;
+	vp.MinDepth = 0;	
+	vp.TopLeftX = 0;
+	vp.TopLeftY = 0;
+	ActiveViewPort( &vp );
 
 	//Render Target
 	ID3D11Texture2D* pBackBuffer = NULL;
 	m_SwapChain->GetBuffer( 0, __uuidof( ID3D11Texture2D ), ( LPVOID* )&pBackBuffer );
-	m_DefaultRenderTarget.Init( pBackBuffer );
+	BbDevRenderTargetItl* rtitl = m_DataMgr->GetRenderTargetItl(BBUL_MAX);
+	rtitl->Create( pBackBuffer );
 
 	//Depth Stencil
-	BbDevDepthStencilDesc bddsd;
-	bddsd.width = m_Width;
-	bddsd.height = m_Height;
-	bddsd.t2dfmt = DXGI_FORMAT_D24_UNORM_S8_UINT;
-	bddsd.dsvfmt = DXGI_FORMAT_D24_UNORM_S8_UINT;
-	//bddsd.dsvfmt = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
-	bddsd.srvfmt = DXGI_FORMAT_UNKNOWN;
-	m_DefaultDepthStencil.Init( &bddsd );
+	BbDevTextureDesc dstd;
+	dstd.width = m_Width;
+	dstd.height = m_Height;
+	dstd.fmttex = DXGI_FORMAT_D24_UNORM_S8_UINT;
+	dstd.fmtdsv = DXGI_FORMAT_D24_UNORM_S8_UINT;
+	BbDevDepthStencilItl* dsitl = m_DataMgr->GetDepthStencilItl(BBUL_MAX);
+	dsitl->Create( &dstd );
+
+	BbDevRenderPad pad;
+	ActiveRenderPad( &pad );
+
+	ActiveTopology( D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST );
 }
 
-void BbDeviceDirect::InitDefaultValue()
+void BbDeviceDirect::BeNull()
 {
 	BBUL len1 = sizeof(void*) * BB_PIPE_TYPE_COUNT * D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT;	
-	BBUL len2 = sizeof(void*) * D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT;
 	memset( m_PipeSampler, 0, len1 );
 	memset( m_PipeSrv, 0, len1 );
 	memset( m_PipeBufConst, 0, len1 );
-	memset( m_CurRenderTarget, 0, len2 );
-
-	m_DefaultStateBlend.Attach();
-	m_DefaultStateDepthStencil.Attach();
-	m_DefaultStateRasterizer.Attach();
-	m_DefaultViewPort.Attach();
-	m_DefaultRenderTarget.Attach();
-	m_DefaultDepthStencil.Attach();
-	
-	m_CurStateBlend = &m_DefaultStateBlend;
-	m_CurStateDepthStencil = &m_DefaultStateDepthStencil;
-	m_CurStateRasterizer = &m_DefaultStateRasterizer;
-	m_CurViewPort = &m_DefaultViewPort;	
-	m_CurDepthStencil = &m_DefaultDepthStencil;
-	m_CurBufVertex = nullptr;
-	m_CurBufIndex = nullptr;
-	m_CurLayout = nullptr;
-	m_CurTopology = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-	m_CurRenderTarget[0] = &m_DefaultRenderTarget;
-	m_DefaultRenderTarget.AttachRtv();
-
-	m_Context->OMSetBlendState( m_CurStateBlend->State(), m_CurStateBlend->BlendFactor(), m_CurStateBlend->SampleMask() );
-	m_Context->OMSetDepthStencilState( m_CurStateDepthStencil->State(), m_CurStateDepthStencil->Ref() );
-	m_Context->RSSetState( m_CurStateRasterizer->State() );
-	m_Context->RSSetViewports( 1, m_CurViewPort->Vp() );
-	ID3D11RenderTargetView* rtv = m_CurRenderTarget[0]->Rtv();
-	m_Context->OMSetRenderTargets( 1, &rtv, m_CurDepthStencil->Dsv() );
-	m_Context->IASetPrimitiveTopology( m_CurTopology );	
-}
-
-void BbDeviceDirect::DestroyDefault()
-{
-	BbDevData::DestroyDevice();
-	DestroyDefaultValue();
-	DestroyDefaultData();	
-}
-
-void BbDeviceDirect::DestroyDefaultValue()
-{
-	m_DefaultStateBlend.Detach();
-	m_DefaultStateDepthStencil.Detach();
-	m_DefaultStateRasterizer.Detach();
-	m_DefaultViewPort.Detach();
-	m_DefaultRenderTarget.Detach();
-	m_DefaultDepthStencil.Detach();
+	memset( &m_CurViewPort, 0, sizeof(D3D11_VIEWPORT) );
+	m_CurTopology = D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
 
 	m_CurStateBlend = nullptr;
 	m_CurStateDepthStencil = nullptr;
-	m_CurStateRasterizer = nullptr;
-	m_CurViewPort = nullptr;
-	m_CurDepthStencil = nullptr;
+	m_CurStateRasterizer = nullptr;	
+	m_CurDepthStencil = nullptr;	
+	m_CurBufVertex = nullptr;
+	m_CurBufIndex = nullptr;
 	m_CurLayout = nullptr;
+	m_CurVertexShader = nullptr;
+	m_CurPixelShader = nullptr;
+	m_CurHullShader = nullptr;
+	m_CurDomainShader = nullptr;
+	m_CurGeometryShader = nullptr;
 
-	m_Context->OMSetBlendState( nullptr, nullptr, 0 );
-	m_Context->OMSetDepthStencilState( nullptr, 1 );
-	m_Context->RSSetState( nullptr );
-	m_Context->RSSetViewports( 0, nullptr );
-	m_Context->OMSetRenderTargets( 0, nullptr, nullptr );
-	m_Context->IASetInputLayout( nullptr );
-}
+	m_Device = nullptr;
+	m_Context = nullptr;
+	m_SwapChain = nullptr;
 
-void BbDeviceDirect::DestroyDefaultData()
-{
-	m_DefaultDepthStencil.Destroy();
-	m_DefaultRenderTarget.Destroy();
-	m_DefaultViewPort.Destroy();
-	m_DefaultStateRasterizer.Destroy();
-	m_DefaultStateBlend.Destroy();
-	m_DefaultStateDepthStencil.Destroy();
+	m_Width = 0;
+	m_Height = 0;
+	m_Init = false;
+
+	m_DataMgr = nullptr;
 }

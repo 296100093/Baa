@@ -1,225 +1,149 @@
 #include "DeviceBuffer.h"
-#include "DeviceDirect.h"
+#include "DeviceBufferInternal.h"
+#include "DeviceDataMgr.h"
+#include <assert.h>
 
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
 
-BbDevBufVertex* BbDevBufVertex::Create(BbDevBufVertexDesc* desc)
+BB_DEV_SMART_REF_IMPL(BbDevBufVertex,GetBufVertexItl);
+
+void BbDevBufVertex::Create( void* data, BBUL stride, BBUL count )
 {
-	return s_BbDdMgr->CreateBufVertex(desc);
+	assert( BBUL_MAX==m_Idx );
+	BbDeviceDataMgr* mgr = BbDeviceDataMgr::Get();
+	m_Idx = mgr->CreateBufVertex();
+	mgr->GetBufVertexItl( m_Idx )->Create( data, stride, count );
 }
 
-BbDevBufVertex::BbDevBufVertex(ID3D11Buffer* buf, UINT stride, bool imm)
-	: m_Buffer(buf)
-	, m_Stride(stride)
-	, m_Immutable(imm)
+void BbDevBufVertex::Create( BBUL stride, BBUL count )
 {
-	m_Type = BB_DEV_DAT_BUFFER_VERTEX;
+	assert( BBUL_MAX==m_Idx );
+	BbDeviceDataMgr* mgr = BbDeviceDataMgr::Get();
+	m_Idx = mgr->CreateBufVertex();
+	mgr->GetBufVertexItl( m_Idx )->Create( stride, count );
 }
 
-void BbDevBufVertex::Init(BbDevBufVertexDesc* bvd)
+void BbDevBufVertex::Update( void* data, BBUL left, BBUL width )
 {
-	ID3D11Device* device = s_BbDd->Device();
-	D3D11_BUFFER_DESC bd;
-	D3D11_SUBRESOURCE_DATA srd;
-	HRESULT hr;
-
-	m_Stride = static_cast<UINT>(bvd->stride);
-	m_Immutable = bvd->immutable;
-
-	bd.ByteWidth = bvd->stride * bvd->count;
-	bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-	bd.Usage = bvd->immutable ? D3D11_USAGE_IMMUTABLE : D3D11_USAGE_DYNAMIC;
-	bd.CPUAccessFlags = bvd->immutable ? 0 : D3D11_CPU_ACCESS_WRITE;
-	bd.MiscFlags = 0;
-	bd.StructureByteStride = 0;
-	srd.pSysMem = bvd->src;
-	srd.SysMemPitch = 0;
-	srd.SysMemSlicePitch = 0;
-
-	hr = device->CreateBuffer(&bd, &srd, &m_Buffer);
+	assert( BBUL_MAX!=m_Idx );
+	BbDeviceDataMgr* mgr = BbDeviceDataMgr::Get();
+	mgr->GetBufVertexItl( m_Idx )->UpdateByNum( data, left, width );
 }
 
-void BbDevBufVertex::Destroy()
+//////////////////////////////////////////////////////////////////////////
+
+BB_DEV_SMART_REF_IMPL(BbDevBufIndex,GetBufIndexItl);
+
+void BbDevBufIndex::Create16( void* data, BBUL count )
 {
-	if (Istach())
+	assert( BBUL_MAX==m_Idx );
+	BbDeviceDataMgr* mgr = BbDeviceDataMgr::Get();
+	m_Idx = mgr->CreateBufIndex();
+	mgr->GetBufIndexItl(m_Idx)->Create16( data, count );
+}
+
+void BbDevBufIndex::Create32( void* data, BBUL count )
+{
+	assert( BBUL_MAX==m_Idx );
+	BbDeviceDataMgr* mgr = BbDeviceDataMgr::Get();
+	m_Idx = mgr->CreateBufIndex();
+	mgr->GetBufIndexItl(m_Idx)->Create32( data, count );
+}
+
+void BbDevBufIndex::Create16( BBUL count )
+{
+	assert( BBUL_MAX==m_Idx );
+	BbDeviceDataMgr* mgr = BbDeviceDataMgr::Get();
+	m_Idx = mgr->CreateBufIndex();
+	mgr->GetBufIndexItl(m_Idx)->Create16( count );
+}
+
+void BbDevBufIndex::Create32( BBUL count )
+{
+	assert( BBUL_MAX==m_Idx );
+	BbDeviceDataMgr* mgr = BbDeviceDataMgr::Get();
+	m_Idx = mgr->CreateBufIndex();
+	mgr->GetBufIndexItl(m_Idx)->Create32( count );
+}
+
+void BbDevBufIndex::Update( void* data, BBUL left, BBUL width )
+{
+	assert( BBUL_MAX!=m_Idx );
+	BbDeviceDataMgr* mgr = BbDeviceDataMgr::Get();
+	mgr->GetBufIndexItl( m_Idx )->UpdateByNum( data, left, width );
+}
+
+//////////////////////////////////////////////////////////////////////////
+
+BbDevBufConst::BbDevBufConst()
+	:	m_Buffer(nullptr)
+	,	m_Data( nullptr )
+	,	m_Size( 0 )
+	,	m_Update(false)
+{
+}
+
+void BbDevBufConst::Create( BBUL size )
+{
+	ID3D11Device* device = BbDeviceDataMgr::Get()->Device();
+	if ( 0<size )
 	{
-		s_BbDd->ActiveBufVertex(nullptr, 0);
+		m_Size = size;
+		m_Data = ::malloc( m_Size );
+		memset( m_Data, 0, m_Size );
+
+		D3D11_BUFFER_DESC bd;	
+		bd.ByteWidth			= m_Size;
+		bd.BindFlags			= D3D11_BIND_CONSTANT_BUFFER;
+		bd.CPUAccessFlags		= D3D11_CPU_ACCESS_WRITE;
+		bd.Usage				= D3D11_USAGE_DYNAMIC;
+		bd.MiscFlags			= 0;
+		bd.StructureByteStride	= 0;
+		device->CreateBuffer( &bd, NULL, &m_Buffer );
 	}
-	BB_SAFE_RELEASE(m_Buffer);
-	m_Stride = 0;
-	m_Immutable = false;
 }
 
-void BbDevBufVertex::Active(BBUI off)
+void BbDevBufConst::Destroy()
 {
-	s_BbDd->ActiveBufVertex(nullptr == m_Buffer ? nullptr : this, off);
+	BB_SAFE_RELEASE(m_Buffer);
+	if ( nullptr != m_Data )
+	{
+		::free( m_Data );
+		m_Data = nullptr;
+	}
+	m_Size = 0;
+	m_Update = false;
+	m_aBcstVar.clear();
 }
 
-ID3D11Buffer* BbDevBufVertex::Buf()
+ID3D11Buffer* BbDevBufConst::Buf()
 {
 	return m_Buffer;
 }
 
-UINT BbDevBufVertex::Stride()
+void BbDevBufConst::Commit()
 {
-	return m_Stride;
-}
-
-//////////////////////////////////////////////////////////////////////////
-
-BbDevBufIndex::BbDevBufIndex()
-	: m_Buffer(nullptr)
-	, m_Format(DXGI_FORMAT_UNKNOWN)
-	, m_Immutable(false)
-{
-
-}
-
-void BbDevBufIndex::Init(BbDevBufIndexDesc* bid)
-{
-	ID3D11Device* device = s_BbDd->Device();
-	D3D11_BUFFER_DESC bd;
-	D3D11_SUBRESOURCE_DATA srd;
-	HRESULT hr;
-
-	m_Format = bid->i16 ? DXGI_FORMAT_R16_UINT : DXGI_FORMAT_R32_UINT;
-	m_Immutable = bid->immutable;
-
-	bd.ByteWidth = bid->count*(bid->i16 ? sizeof(unsigned short) : sizeof(unsigned int));
-	bd.BindFlags = D3D11_BIND_INDEX_BUFFER;
-	bd.Usage = bid->immutable ? D3D11_USAGE_IMMUTABLE : D3D11_USAGE_DYNAMIC;
-	bd.CPUAccessFlags = bid->immutable ? 0 : D3D11_CPU_ACCESS_WRITE;
-	bd.MiscFlags = 0;
-	bd.StructureByteStride = 0;
-	srd.pSysMem = bid->src;
-	srd.SysMemPitch = 0;
-	srd.SysMemSlicePitch = 0;
-
-	hr = device->CreateBuffer(&bd, &srd, &m_Buffer);
-}
-
-void BbDevBufIndex::Destroy()
-{
-	if (Istach())
+	if ( m_Update )
 	{
-		s_BbDd->ActiveBufIndex(nullptr, 0);
+		ID3D11DeviceContext* context = BbDeviceDataMgr::Get()->Context();
+		D3D11_MAPPED_SUBRESOURCE mss;
+		memset( &mss, 0, sizeof( D3D11_MAPPED_SUBRESOURCE ) );
+		if ( S_OK == context->Map( m_Buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mss ) )
+		{
+			memcpy_s( mss.pData, m_Size, m_Data, m_Size );
+			context->Unmap( m_Buffer, 0 );
+		}
+		m_Update = false;
 	}
-	BB_SAFE_RELEASE(m_Buffer);
-	m_Format = DXGI_FORMAT_UNKNOWN;
-	m_Immutable = false;
 }
 
-void BbDevBufIndex::Active(BBUI off)
+void BbDevBufConst::SetValue( const void* src, BBUL size, BBUL off )
 {
-	s_BbDd->ActiveBufIndex(nullptr == m_Buffer ? nullptr : this, off);
-}
-
-ID3D11Buffer* BbDevBufIndex::Buf()
-{
-	return m_Buffer;
-}
-
-DXGI_FORMAT BbDevBufIndex::Format()
-{
-	return m_Format;
-}
-
-//////////////////////////////////////////////////////////////////////////
-
-void BbDevLayoutDesc::Add(const char* name, BbLayoutFmtTypeE fmt)
-{
-	m_StrBuf.push_back(name);
-	D3D11_INPUT_ELEMENT_DESC ied;
-	ied.SemanticName = m_StrBuf.back().c_str();
-	ied.SemanticIndex = 0;
-	ied.Format = TurnFmt(fmt);
-	ied.InputSlot = 0;
-	ied.AlignedByteOffset = CalcOffset();
-	ied.InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA;
-	ied.InstanceDataStepRate = 0;
-	m_Desc.push_back(ied);
-}
-
-D3D11_INPUT_ELEMENT_DESC* BbDevLayoutDesc::Buf()
-{
-	return &m_Desc.front();
-}
-
-BBUL BbDevLayoutDesc::Count()
-{
-	return m_Desc.size();
-}
-
-DXGI_FORMAT BbDevLayoutDesc::TurnFmt(BbLayoutFmtTypeE fmt)
-{
-	DXGI_FORMAT df = DXGI_FORMAT_UNKNOWN;
-	switch (fmt)
+	byte* dest = (byte*)m_Data + off;
+	if(0 != memcmp( dest, src, size ))
 	{
-	case BB_LF_XYZW_F:	df = DXGI_FORMAT_R32G32B32A32_FLOAT;	break;
-	case BB_LF_XYZ_F:	df = DXGI_FORMAT_R32G32B32_FLOAT;		break;
-	case BB_LF_XY_F:	df = DXGI_FORMAT_R32G32_FLOAT;			break;
-	case BB_LF_X_F:		df = DXGI_FORMAT_R32_FLOAT;				break;
-	default:	break;
+		memcpy_s( dest, size, src, size );
+		m_Update = true;
 	}
-	return df;
 }
-
-UINT BbDevLayoutDesc::TurnSize(DXGI_FORMAT fmt)
-{
-	UINT size = 0;
-	switch (fmt)
-	{
-	case DXGI_FORMAT_R32G32B32A32_FLOAT:	size = 16;	break;
-	case DXGI_FORMAT_R32G32B32_FLOAT:		size = 12;	break;
-	case DXGI_FORMAT_R32G32_FLOAT:			size = 8;		break;
-	case DXGI_FORMAT_R32_FLOAT:				size = 4;		break;
-	default:	break;
-	}
-	return size;
-}
-
-UINT BbDevLayoutDesc::CalcOffset()
-{
-	UINT offset = 0;
-	if (0 < m_Desc.size())
-	{
-		D3D11_INPUT_ELEMENT_DESC* ied = &m_Desc.back();
-		offset = ied->AlignedByteOffset + TurnSize(ied->Format);
-	}
-	return offset;
-}
-
-//////////////////////////////////////////////////////////////////////////
-
-BbDevLayout::BbDevLayout()
-	: m_Layout(nullptr)
-{
-
-}
-
-void BbDevLayout::Init(ID3D11InputLayout* il)
-{
-	Destroy();
-	m_Layout = il;
-}
-
-void BbDevLayout::Destroy()
-{
-	if (Istach())
-	{
-		s_BbDd->ActiveLayout(nullptr);
-	}
-	BB_SAFE_RELEASE(m_Layout);
-}
-
-void BbDevLayout::Active()
-{
-	s_BbDd->ActiveLayout(nullptr == m_Layout ? nullptr : this);
-}
-
-ID3D11InputLayout* BbDevLayout::Layout()
-{
-	return m_Layout;
-}
-

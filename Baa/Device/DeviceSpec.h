@@ -1,8 +1,7 @@
 #pragma once
 
-#include "DeviceInputAssembler.h"
-#include "DeviceOutputMerger.h"
-#include "DevicePipe.h"
-#include "DeviceRasterizer.h"
+#include "DeviceBuffer.h"
+#include "DeviceState.h"
+#include "DeviceTexture.h"
 #include "DeviceEffect.h"
-#include "DeviceMesh.h"
+//#include "DeviceMesh.h"

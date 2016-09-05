@@ -1,79 +1,73 @@
 #pragma once
 
-#include "DeviceData.h"
+#include "DeviceDef.h"
+
 
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
 
-class BbDevBufVertex : public BbDevData
+class BbDevBufVertex
 {
 public:
-	static BbDevBufVertex* Create(BbDevBufVertexDesc* desc);
+	BB_DEV_SMART_REF_DECL(BbDevBufVertex);
 
-public:
-	BbDevBufVertex(ID3D11Buffer* buf, UINT stride, bool imm);
-	
-	ID3D11Buffer*	Buf();
-	UINT			Stride();
+	void	Create( void* data, BBUL stride, BBUL count );
+	void	Create( BBUL stride, BBUL count );
+	void	Update( void* data, BBUL left, BBUL width );	// by num
 private:
-	ID3D11Buffer*	m_Buffer;
-	UINT				m_Stride;
-	bool					m_Immutable;
+	BBUL	m_Idx;
 };
 
 //////////////////////////////////////////////////////////////////////////
 
-class BbDevBufIndex : public BbDevData
+class BbDevBufIndex
 {
 public:
-	BbDevBufIndex();
+	BB_DEV_SMART_REF_DECL(BbDevBufIndex);
 
-	void Init( BbDevBufIndexDesc* bid );
+	void Create16( void* data, BBUL count );
+	void Create32( void* data, BBUL count );
+	void Create16( BBUL count );
+	void Create32( BBUL count );
+	void Update( void* data, BBUL left, BBUL width );	// by num
+private:
+	BBUL	m_Idx;
+};
+
+//////////////////////////////////////////////////////////////////////////
+
+class BbDevBufConst
+{
+public:
+	struct BcstVar
+	{
+		BbString name;
+		BbStringHash namehash;
+		BBUL off;
+		BBUL size;
+		BcstVar() : off(0), size(0)	{;}
+	};	
+	typedef std::vector<BcstVar>	BcstVarArray;
+
+public:
+	BbDevBufConst();
+
+	void Create( BBUL size );
 	void Destroy();
-	void Active( BBUI off );
-	BbDevDataTypeE Type() const	{ return BB_DEV_DAT_BUFFER_INDEX; }
 
-	ID3D11Buffer*	Buf();
-	DXGI_FORMAT		Format();
+	void Commit();
+	void SetValue( const void* src, BBUL size, BBUL off );
 
-private:
-	ID3D11Buffer*	m_Buffer;
-	DXGI_FORMAT		m_Format;
-	bool			m_Immutable;
-};
+	ID3D11Buffer*		Buf();
 
-//////////////////////////////////////////////////////////////////////////
-
-class BbDevLayoutDesc
-{
-	typedef std::vector<D3D11_INPUT_ELEMENT_DESC>	EleDescArray;
-	typedef std::list<BbString>		StrBuf;
 public:
-	void Add( const char* name, BbLayoutFmtTypeE fmt );
-	D3D11_INPUT_ELEMENT_DESC* Buf();
-	BBUL Count();
+	BcstVarArray	m_aBcstVar;
 
 private:	
-	DXGI_FORMAT TurnFmt( BbLayoutFmtTypeE fmt );
-	UINT		TurnSize( DXGI_FORMAT fmt );
-	UINT		CalcOffset();
-
-public:
-	EleDescArray		m_Desc;
-	StrBuf				m_StrBuf;
+	ID3D11Buffer*	m_Buffer;
+	void*			m_Data;
+	BBUL			m_Size;
+	bool			m_Update;
 };
 
-class BbDevLayout : public BbDevData
-{
-public:
-	BbDevLayout();
-
-	void Init( ID3D11InputLayout* il );
-	void Destroy();
-	void Active();
-
-	ID3D11InputLayout*	Layout();
-
-private:
-	ID3D11InputLayout*	m_Layout;
-};
+//////////////////////////////////////////////////////////////////////////
